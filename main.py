@@ -36,6 +36,9 @@ if __name__ == '__main__':
     parser.add_argument('--albedo', action='store_true', help="only use albedo shading to train, overrides --albedo_iters")
     parser.add_argument('--albedo_iters', type=int, default=1000, help="training iters that only use albedo shading")
     parser.add_argument('--uniform_sphere_rate', type=float, default=0.5, help="likelihood of sampling camera location uniformly on the sphere surface area")
+    parser.add_argument('--which_thresh', type=str, default='none', choices=['none', 'static', 'dynamic'], help="which threshold to use for predicted xstart")
+    parser.add_argument('--thresh_lr', type=float, default=1, help="learning rate for thresholding (1 step)")
+    parser.add_argument('--adaptive_thresh_lr', action='store_true', help="whether to use adaptive learning rate for thresholding")
     # model options
     parser.add_argument('--bg_radius', type=float, default=1.4, help="if positive, use a background model at sphere(bg_radius)")
     parser.add_argument('--density_thresh', type=float, default=10, help="threshold for density grid to be occupied")
@@ -137,7 +140,7 @@ if __name__ == '__main__':
 
         if opt.guidance == 'stable-diffusion':
             from nerf.sd import StableDiffusion
-            guidance = StableDiffusion(device, opt.sd_version)
+            guidance = StableDiffusion(device, opt.sd_version, opt=opt)
         elif opt.guidance == 'clip':
             from nerf.clip import CLIP
             guidance = CLIP(device)

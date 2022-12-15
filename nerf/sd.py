@@ -7,7 +7,7 @@ logging.set_verbosity_error()
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import numpy as np
 import time
 
 def seed_everything(seed):
@@ -17,11 +17,12 @@ def seed_everything(seed):
     #torch.backends.cudnn.benchmark = True
 
 class StableDiffusion(nn.Module):
-    def __init__(self, device, sd_version='2.0', hf_key=None):
+    def __init__(self, device, sd_version='2.0', hf_key=None, opt=None):
         super().__init__()
 
         self.device = device
         self.sd_version = sd_version
+        self.opt = opt
 
         print(f'[INFO] loading stable diffusion...')
         
@@ -100,6 +101,32 @@ class StableDiffusion(nn.Module):
         # perform guidance (high scale from paper!)
         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
         noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+        if self.opt.which_thresh != 'none':
+            noise_pred_trainable = noise_pred.detach().clone()
+            noise_pred_trainable.requires_grad = True
+            a_t = self.alphas[t]
+            sqrt_one_minus_at = torch.sqrt(1 - a_t)
+            pred_x0 = (latents_noisy - sqrt_one_minus_at * noise_pred_trainable) / a_t.sqrt()
+            if self.opt.which_thresh == 'static':
+                pred_x0_thresh = torch.clip(pred_x0, -1, 1)  # NOTE: hardcoded clip range
+            elif self.opt.which_thresh == 'dynamic':
+                s = torch.as_tensor(np.percentile(pred_x0.detach().abs().cpu().numpy(), 90, axis=(1,2,3)), dtype=pred_x0.dtype).to(pred_x0.device)
+                pred_x0_thresh = torch.clip(pred_x0, -s, s) / s  # NOTE: hardcoded clip range, batch size must be 1
+            else:
+                raise NotImplementedError
+            if self.opt.thresh_lr < 0:
+                # NOTE: recompute noise_pred instead of 1-step gradient descent
+                noise_pred = (latents_noisy - pred_x0_thresh * a_t.sqrt()) / sqrt_one_minus_at
+            else:
+                loss_thresh = F.mse_loss(pred_x0_thresh, pred_x0)
+                thresh_grad = torch.autograd.grad(loss_thresh, noise_pred_trainable)[0]
+                thresh_grad = thresh_grad.data
+                if self.opt.adaptive_thresh_lr:
+                    thresh_lr = torch.norm(noise_pred) / torch.norm(thresh_grad) * self.opt.thresh_lr
+                else:
+                    thresh_lr = self.opt.thresh_lr
+                noise_pred = noise_pred - thresh_lr * thresh_grad
 
         # w(t), sigma_t^2
         w = (1 - self.alphas[t])
