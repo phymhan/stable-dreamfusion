@@ -115,18 +115,28 @@ class StableDiffusion(nn.Module):
                 pred_x0_thresh = torch.clip(pred_x0, -s, s) / s  # NOTE: hardcoded clip range, batch size must be 1
             else:
                 raise NotImplementedError
-            if self.opt.thresh_lr < 0:
-                # NOTE: recompute noise_pred instead of 1-step gradient descent
-                noise_pred = (latents_noisy - pred_x0_thresh * a_t.sqrt()) / sqrt_one_minus_at
-            else:
-                loss_thresh = F.mse_loss(pred_x0_thresh, pred_x0)
-                thresh_grad = torch.autograd.grad(loss_thresh, noise_pred_trainable)[0]
-                thresh_grad = thresh_grad.data
-                if self.opt.adaptive_thresh_lr:
-                    thresh_lr = torch.norm(noise_pred) / torch.norm(thresh_grad) * self.opt.thresh_lr
-                else:
-                    thresh_lr = self.opt.thresh_lr
+
+            loss_thresh = F.mse_loss(pred_x0_thresh, pred_x0)
+            thresh_grad = torch.autograd.grad(loss_thresh, noise_pred_trainable)[0]
+            thresh_grad = thresh_grad.data
+
+            if self.opt.adaptive_thresh_lr == 'fixed':
+                thresh_lr = self.opt.thresh_lr
                 noise_pred = noise_pred - thresh_lr * thresh_grad
+            elif self.opt.adaptive_thresh_lr == 'norm':
+                thresh_lr = torch.norm(noise_pred) / torch.norm(thresh_grad) * self.opt.thresh_lr
+                noise_pred = noise_pred - thresh_lr * thresh_grad
+            elif self.opt.adaptive_thresh_lr == 'diff':
+                noise_pred_target = (latents_noisy - pred_x0_thresh * a_t.sqrt()) / sqrt_one_minus_at
+                thresh_lr = self.opt.thresh_lr
+                noise_pred = noise_pred + thresh_lr * (noise_pred_target - noise_pred)
+            elif self.opt.adaptive_thresh_lr == 'hinge':
+                noise_pred_target = (latents_noisy - pred_x0_thresh * a_t.sqrt()) / sqrt_one_minus_at
+                thresh_lr_max = torch.norm(noise_pred_target - noise_pred) / torch.norm(thresh_grad)
+                thresh_lr = min(self.opt.thresh_lr, thresh_lr_max)
+                noise_pred = noise_pred - thresh_lr * thresh_grad
+            else:
+                raise NotImplementedError
 
         # w(t), sigma_t^2
         w = (1 - self.alphas[t])

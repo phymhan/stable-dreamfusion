@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('--uniform_sphere_rate', type=float, default=0.5, help="likelihood of sampling camera location uniformly on the sphere surface area")
     parser.add_argument('--which_thresh', type=str, default='none', choices=['none', 'static', 'dynamic'], help="which threshold to use for predicted xstart")
     parser.add_argument('--thresh_lr', type=float, default=1, help="learning rate for thresholding (1 step)")
-    parser.add_argument('--adaptive_thresh_lr', action='store_true', help="whether to use adaptive learning rate for thresholding")
+    parser.add_argument('--adaptive_thresh_lr', type=str, default='none', choices=['fixed', 'norm', 'diff', 'hinge'], help="")
     # model options
     parser.add_argument('--bg_radius', type=float, default=1.4, help="if positive, use a background model at sphere(bg_radius)")
     parser.add_argument('--density_thresh', type=float, default=10, help="threshold for density grid to be occupied")
